@@ -32,8 +32,9 @@ def check_attention_cp_compatibility(vllm_config: VllmConfig) -> None:
                     "Decode Context Parallelism (DCP) requires attention "
                     "implementations to return the softmax LSE during decode, "
                     f"but {layer_impl.__class__.__name__} does not. "
-                    "Try a different backend by setting "
-                    "--attention-backend or disable DCP."
+                    "Try a different backend via --attention-backend (CLI) "
+                    "or VLLM_ATTENTION_BACKEND (env var), or disable DCP by "
+                    "setting --decode-context-parallel-size 1."
                 )
 
             if pcp_size > 1:

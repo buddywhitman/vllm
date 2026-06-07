@@ -470,6 +470,20 @@ class ParallelConfig:
                     f"to be greater than 1, but got "
                     f"TP={self.tensor_parallel_size},DP={self.data_parallel_size}."
                 )
+            if self.eplb_config.num_redundant_experts == 0:
+                # With zero redundant experts EPLB runs but cannot redistribute
+                # any expert slots, making load balancing a no-op.  Default to
+                # tensor_parallel_size (one extra slot per TP rank), which is
+                # the minimum that allows meaningful redistribution.
+                default_redundant = self.tensor_parallel_size
+                logger.warning(
+                    "enable_eplb=True but num_redundant_experts is 0. "
+                    "Defaulting to tensor_parallel_size=%d. "
+                    "Set eplb_config.num_redundant_experts explicitly to "
+                    "suppress this warning.",
+                    default_redundant,
+                )
+                self.eplb_config.num_redundant_experts = default_redundant
         else:
             if self.eplb_config.num_redundant_experts != 0:
                 raise ValueError(
