@@ -23,7 +23,34 @@ if TYPE_CHECKING:
 
 @dataclass
 class NixlKVConnectorStats(KVConnectorStats):
-    """Container for transfer performance metrics"""
+    """Transfer performance metrics for the NIXL KV connector.
+
+    **Aggregation semantics** (important for interpretation):
+
+    In a tensor-parallel (TP) deployment each TP worker collects stats
+    independently via ``record_transfer`` / ``record_failed_*``.  Before
+    these stats reach the logger they are combined with ``aggregate()``,
+    which *extends* the list fields of every other worker's stats into this
+    object.  After aggregation the ``data`` lists contain one entry
+    *per individual transfer across all TP ranks*.
+
+    ``reduce()`` then summarises that combined distribution:
+
+    * ``Num successful transfers``  — total count across **all** TP ranks
+      in the reporting interval, not a per-rank count.
+    * ``Avg / P90 xfer time``       — mean / 90th-percentile of the
+      combined latency distribution (all ranks).
+    * ``Avg MB per transfer``       — mean bytes per individual transfer,
+      averaged over all ranks.
+    * ``Throughput (MB/s)``         — ``total_bytes_all_ranks /
+      total_transfer_time_all_ranks``.  For fully-parallel TP ranks this
+      equals the per-rank throughput (not the aggregate system throughput).
+      When transfer times differ across ranks the value is the
+      harmonic-mean-weighted throughput of the pool.
+
+    Prometheus histograms (``NixlPromMetrics``) record the raw
+    *per-transfer* observations and are unaffected by this aggregation.
+    """
 
     def __post_init__(self):
         if not self.data:
@@ -84,6 +111,12 @@ class NixlKVConnectorStats(KVConnectorStats):
         return self
 
     def reduce(self) -> dict[str, int | float]:
+        """Reduce aggregated observations to a loggable summary dict.
+
+        All values reflect the *combined* distribution across every TP rank
+        that contributed to this stats object via ``aggregate()``.  See the
+        class docstring for full aggregation semantics.
+        """
         # Compute compact representative stats suitable for CLI logging
         if self.num_successful_transfers == 0:
             # CLI logging only reports successful transfers stats. If all requests in
@@ -104,12 +137,15 @@ class NixlKVConnectorStats(KVConnectorStats):
         # Convert to MB for CLI logging.
         mb = np.asarray(self.data["bytes_transferred"]) / 2**20
         descs = np.asarray(self.data["num_descriptors"], dtype=np.uint32)
+        # n = total transfers across all TP ranks (not a per-rank count).
         n = len(descs)
         assert n == self.num_successful_transfers
 
         total_mb = mb.sum()
-        avg_mb = total_mb / n
+        avg_mb = total_mb / n  # mean bytes per individual transfer, all ranks
 
+        # total_time_seconds = sum of every individual transfer's duration.
+        # For fully-parallel TP ranks: throughput ≈ per-rank throughput.
         total_time_seconds = xfer_time.sum()
         throughput_mb_s = total_mb / total_time_seconds
 

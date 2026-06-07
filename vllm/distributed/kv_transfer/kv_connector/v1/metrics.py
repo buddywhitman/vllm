@@ -31,8 +31,13 @@ class KVConnectorStats:
         raise NotImplementedError
 
     def aggregate(self, other: "KVConnectorStats") -> "KVConnectorStats":
-        """
-        Aggregate stats with another `KVConnectorStats` object.
+        """Aggregate stats from another worker into this object.
+
+        Called once per TP-rank worker before the logging interval's
+        ``reduce()`` is computed.  After all workers have been aggregated,
+        ``self.data`` contains the *union* of observations from every rank.
+        Implementations should extend (not replace) the existing lists so
+        that ``reduce()`` operates over the full cross-rank distribution.
         """
         raise NotImplementedError
 
